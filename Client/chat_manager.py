@@ -5,6 +5,12 @@ from conversation import Conversation
 from message import Message, MessageEncoder
 from time import sleep
 
+import pickle
+from Crypto import Random
+from Crypto.Random import random
+from Crypto.PublicKey import ElGamal
+from Crypto.Util import number
+
 from menu import menu
 
 from threading import Thread
@@ -14,7 +20,7 @@ import base64
 
 state = INIT  # initial state for the application
 has_requested_messages = False  # history of the next conversation will need to be downloaded and printed
-
+p_size = 256
 
 class ChatManager:
     '''
@@ -63,6 +69,7 @@ class ChatManager:
             if cookie_found == True:
                 # Cookie found, login successful
                 self.is_logged_in = True
+                self.generate_pub_priv()
                 print "Login successful"
             else:
                 # No cookie, login unsuccessful
@@ -81,6 +88,22 @@ class ChatManager:
             self.user_name = ""
             self.password = ""
             self.is_logged_in = False
+
+    def generate_pub_priv(self):
+        try:
+            # Try to open file containing my personal/private keys
+            pub_private = pickle.load(open("./res/%sKeys.p" % self.user_name, "rb"))
+        except (OSError, IOError) as e:
+            # If exception, generate these keys and write to pickle file
+            pub_private = {}
+            # NOTE possible to store entire object and avoid long calcs
+            params = ElGamal.generate(p_size, Random.new().read)
+            pub_private['public'] = params.y
+            pub_private['private'] = params.x
+            pub_private['p'] = params.p
+            pub_private['g'] = params.g
+            pickle.dump(pub_private, open("./res/%sKeys.p" % self.user_name, "wb"))
+
 
     def create_conversation(self):
         '''
@@ -175,11 +198,11 @@ class ChatManager:
                         if participant != self.user_name:
                             participants.append(participant)
                     return participants
-                    
+
         else:
             print "Please log in before accessing Your conversations"
             state = INIT
-        
+
 
     def get_my_conversations(self):
         '''
@@ -326,7 +349,7 @@ class ChatManager:
                         # Check whether the supplied ID is valid
                         req = urllib2.Request("http://" + SERVER + ":" + SERVER_PORT + "/conversations/" +
                                               conversation_id + "/")
-                        # Include cooke
+                        # Include cookie
                         req.add_header("Cookie", self.cookie)
                         r = urllib2.urlopen(req)
                         try:
