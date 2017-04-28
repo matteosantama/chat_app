@@ -1,4 +1,4 @@
-Before starting the chat client, you should edit the config.py configuration file and set the IP address of the server. If you are running the server on the same computer where your client will be running, then set the loacalhost address '127.0.0.1' as the server IP. Otherwise, if your server is running on another machine on the local network, then set the IP address of that machine as the server IP in the config.py file.
+    Before starting the chat client, you should edit the config.py configuration file and set the IP address of the server. If you are running the server on the same computer where your client will be running, then set the loacalhost address '127.0.0.1' as the server IP. Otherwise, if your server is running on another machine on the local network, then set the IP address of that machine as the server IP in the config.py file.
 
 Once configuration is done, the chat client can be started by passing main.py to the Python interpreter:
 python main.py <json file containing user credentials>
