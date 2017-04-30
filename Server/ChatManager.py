@@ -52,7 +52,7 @@ class ChatManager:
         """
         return RegisteredUsers
 
-    def create_conversation(self, participant_list):
+    def create_conversation(self, participant_list,creator):
         """
         Creates a new conversation with the specified participants.
         :param participant_list: the users participating in the conversation
@@ -77,7 +77,7 @@ class ChatManager:
             raise Exception("Not enough user!")
 
         print "Creating new conversation..."
-        new_conversation = Conversation(participant_list)
+        new_conversation = Conversation(participant_list,creator)
         self.active_conversations.append(new_conversation)
 
     def get_conversation(self, conversation_id):

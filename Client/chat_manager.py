@@ -43,6 +43,7 @@ class ChatManager:
         self.user_name = user_name  # user name of the current user
         self.password = password  # password of the current user
         self.get_msgs_thread_started = False  # message retrieval has not been started
+        self.creator = None
 
     def login_user(self):
         '''
@@ -147,7 +148,8 @@ class ChatManager:
             # Add current user to the participant list
             participant_list.append(self.user_name)
             data = json.dumps({
-                "participants": json.dumps(participant_list)
+                "participants": json.dumps(participant_list),
+                "creator": json.dumps(self.user_name)
             })
             print "Creating new conversation..."
             try:
@@ -198,7 +200,32 @@ class ChatManager:
                         if participant != self.user_name:
                             participants.append(participant)
                     return participants
+        else:
+            print "Please log in before accessing Your conversations"
+            state = INIT
 
+    def get_conversation_creator(self):
+        global state
+        # Allowed only, if user is logged in
+        if self.is_logged_in:
+            try:
+                # Querying the server for the conversations of the current user (user is a participant)
+                req = urllib2.Request("http://" + SERVER + ":" + SERVER_PORT + "/conversations")
+                # Include Cookie
+                req.add_header("Cookie", self.cookie)
+                r = urllib2.urlopen(req)
+            except urllib2.HTTPError as e:
+                print "Unable to download conversations, server returned HTTP", e.code, e.msg
+                return
+            except urllib2.URLError as e:
+                print "Unable to download conversations, reason:", e.message
+                return
+            conversations = json.loads(r.read())
+            # Print conversations with IDs and participant lists
+            for c in conversations:
+                conversation_id = c["conversation_id"]
+                if conversation_id == self.current_conversation.get_id():
+                    return c['creator']
         else:
             print "Please log in before accessing Your conversations"
             state = INIT

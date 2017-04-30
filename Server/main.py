@@ -139,7 +139,8 @@ class ConversationHandler(JsonHandler):
         # transform the list of conversations
         for conversation in conversations:
             user_conversation = {'conversation_id': conversation.conversation_id,
-                                 'participants': conversation.participants}
+                                 'participants': conversation.participants,
+                                 'creator': conversation.creator}
             user_conversations.append(user_conversation)
 
         self.write(json.dumps(user_conversations))
@@ -164,7 +165,9 @@ class ConversationCreateHandler(JsonHandler):
             # owner should be included as well!
             participants = self.request.arguments['participants']
             participants = json.loads(participants)
-            cm.create_conversation(participants)
+            creator = self.request.arguments['creator']
+            creator = json.loads(creator)
+            cm.create_conversation(participants,creator)
         except KeyError as e:
             print "KeyError during conversation creation!", e.message
             self.send_error(400, message=e.message)

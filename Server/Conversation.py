@@ -4,10 +4,11 @@ from Message import Message
 
 
 class Conversation:
-    def __init__(self, participants):
+    def __init__(self, participants,creator):
         self.participants = participants  # list of Users
         self.conversation_id = random.randint(1, 10000)
         self.messages = []  # list of Messages
+        self.creator = creator
 
     def add_user(self, user):
         """

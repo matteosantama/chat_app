@@ -4,12 +4,17 @@ from time import sleep
 from threading import Thread
 
 import pickle
+from Crypto import Random
+from Crypto.Random import random
+from Crypto.PublicKey import ElGamal
+from Crypto.Util import number
 
 PUB_KEY_BROADCAST = '01'
 DH__INIT = '10'
 DH_RESPONSE = '11'
 DH_CONFIRM = '12'
 
+p_size = 256
 
 class Conversation:
     '''
@@ -128,9 +133,16 @@ class Conversation:
             sleep(1.0)
 
         print 'we made it!'
-        print self.collected_keys,'all keys'
 
-        # Diffie Hellman
+        creator = self.manager.get_conversation_creator()
+
+        DH_params = ElGamal.generate(p_size, Random.new().read)
+        if self.user_name is creator:
+            # send message to all users
+            # msg = 'DH_INIT|g^x mod p'
+        else:
+            # do something else
+
 
         # You can use this function to initiate your key exchange
         # Useful stuff that you may need:
@@ -147,18 +159,15 @@ class Conversation:
         chat_participants = self.manager.get_other_users()
 
         while len(chat_participants)+1 != len(self.collected_keys):
-            # loop through messages from indices last_seen_id trhough last_processed_msg_id
+            # loop through all messages of convo
             for i in range(len(self.all_messages)):
                 msg = self.all_messages[i]
-                # print msg,"printing message"
-                # print msg['content'], 'message content'
+                # decode message
                 raw = base64.decodestring(base64.decodestring(msg['content'])).split('|')
-                # print raw
+                # if message is a key broadcast, add it to the list
                 if raw[0] == PUB_KEY_BROADCAST:
                     self.collected_keys[msg["owner"]] = raw[1]
-            # print self.collected_keys,'collected keys'
             sleep(1.0)
-        # print self.collected_keys, 'all keys'
         print 'thread stopped'
 
 
