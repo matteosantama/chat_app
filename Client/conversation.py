@@ -6,13 +6,17 @@ from threading import Thread
 import pickle
 from Crypto import Random
 from Crypto.Random import random
-from Crypto.PublicKey import ElGamal
+from Crypto.PublicKey import ElGamal, RSA
+from Crypto.Signature import PKCS1_PSS
 from Crypto.Util import number
+from Crypto.Hash import SHA
 
+MESSAGE_CODE = '00'
 PUB_KEY_BROADCAST = '01'
-DH__INIT = '10'
+DH_INIT = '10'
 DH_RESPONSE = '11'
 DH_CONFIRM = '12'
+SYM_KEY = '13'
 
 p_size = 256
 
@@ -41,6 +45,7 @@ class Conversation:
         self.msg_process_loop.start()
         self.msg_process_loop_started = True
         self.collected_keys= {}
+        self.DH_sender_params = None
 
     def append_msg_to_process(self, msg_json):
         '''
@@ -113,13 +118,13 @@ class Conversation:
         :return:
         '''
 
-        my_keys = pickle.load(open("./res/%s_key_pair.p" % self.manager.user_name, "rb"))
-        my_pub = PUB_KEY_BROADCAST + '|' + str(my_keys['public'])
+        my_keys = pickle.load(open("./res/%s_RSA_keys.p" % self.manager.user_name, "rb"))
+        my_pub = PUB_KEY_BROADCAST + '|' + my_keys.publickey().exportKey()
 
-        print 'sending pub key'
+        print 'sending pub key', my_pub
         self.process_outgoing_message(
             msg_raw=my_pub,
-            originates_from_console=True
+            originates_from_console=False
         )
         print "sent"
         print 'creating thread'
@@ -127,21 +132,46 @@ class Conversation:
         thread = Thread(target = self.collect_keys)
         thread.start()
 
-        'Waiting for users to join chatroom'
         while thread.isAlive():
             print 'Waiting for users to join chatroom'
             sleep(1.0)
 
-        print 'we made it!'
+        print 'thread ended'
 
         creator = self.manager.get_conversation_creator()
 
+        print 'generating keys'
         DH_params = ElGamal.generate(p_size, Random.new().read)
-        if self.user_name is creator:
-            # send message to all users
-            # msg = 'DH_INIT|g^x mod p'
+        print 'generated'
+        if self.manager.user_name == creator:
+            print 'in if statement'
+            # send first DH parameter to all users
+            DH_msg1 = DH_INIT + '|' + str(DH_params.y) + '|' + str(DH_params.g) + '|' + str(DH_params.p)
+            print DH_msg1
+            self.process_outgoing_message(
+                msg_raw=DH_msg1,
+                originates_from_console=False
+            )
+            # Wait for BCDs responses
+            # while self.DH_receiver_params is None:
+            #     sleep(0.1)
         else:
-            # do something else
+            print 'in else'
+            # Wait for all the recivers to get firts DH message
+            while self.DH_sender_params is None:
+                print 'sleeping'
+                sleep(0.01)
+            # received parameters from A
+            y_a, g_a, p_a = self.DH_sender_params
+            # create response with B's parameters
+            DH_msg2 = DH_RESPONSE + '|' + str(DH_params.y) + '|' + str(DH_params.g) + '|' + str(DH_params.p)
+            # sign A's parameters
+            signature = self.sign(str(y_a) + '|' + str(g_a) + '|' + str(p_a))
+            # append signature
+            DH_msg2 += '|' + signature
+            # send response
+            self.process_outgoing_message(msg_raw=DH_msg2,originates_from_console=False)
+            print 'Receiver: ' + str(y_a) + '|' + str(g_a) + '|' + str(p_a)
 
 
         # You can use this function to initiate your key exchange
@@ -155,6 +185,7 @@ class Conversation:
         # replace this with anything needed for your key exchange
         pass
 
+    # NOTE can collect keys via process_incoming_message
     def collect_keys(self):
         chat_participants = self.manager.get_other_users()
 
@@ -166,10 +197,17 @@ class Conversation:
                 raw = base64.decodestring(base64.decodestring(msg['content'])).split('|')
                 # if message is a key broadcast, add it to the list
                 if raw[0] == PUB_KEY_BROADCAST:
-                    self.collected_keys[msg["owner"]] = raw[1]
+                    self.collected_keys[msg["owner"]] = RSA.importKey(raw[1])
             sleep(1.0)
-        print 'thread stopped'
+        print self.collected_keys, 'collected keys'
 
+    def sign(self,msg):
+        h = SHA.new()
+        h.update(msg)
+        keystr = self.manager.key_object.exportKey('PEM')
+        # signer object constructed with RSA object chat manager
+        signer = PKCS1_PSS.new(RSA.importKey(keystr))
+        return signer.sign(h)
 
 
     def process_incoming_message(self, msg_raw, msg_id, owner_str):
@@ -187,11 +225,17 @@ class Conversation:
 		# example is base64 decoding, extend this with any crypto processing of your protocol
         decoded_msg = base64.decodestring(msg_raw)
 
-        # print message and add it to the list of printed messages
-        self.print_message(
-            msg_raw=decoded_msg,
-            owner_str=owner_str
-        )
+        message_parts = decoded_msg.split('|')
+
+        if message_parts[0] == MESSAGE_CODE:
+            # print message and add it to the list of printed messages
+            self.print_message(
+                msg_raw=decoded_msg,
+                owner_str=owner_str
+            )
+        elif message_parts[0] == DH_INIT:
+            print "INIT", message_parts
+            self.DH_sender_params = message_parts[1::]
 
     def process_outgoing_message(self, msg_raw, originates_from_console=False):
         '''

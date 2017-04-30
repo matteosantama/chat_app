@@ -7,8 +7,7 @@ from time import sleep
 
 import pickle
 from Crypto import Random
-from Crypto.Random import random
-from Crypto.PublicKey import ElGamal
+from Crypto.PublicKey import RSA
 from Crypto.Util import number
 
 from menu import menu
@@ -20,7 +19,7 @@ import base64
 
 state = INIT  # initial state for the application
 has_requested_messages = False  # history of the next conversation will need to be downloaded and printed
-p_size = 256
+p_size = 2048
 
 class ChatManager:
     '''
@@ -44,6 +43,7 @@ class ChatManager:
         self.password = password  # password of the current user
         self.get_msgs_thread_started = False  # message retrieval has not been started
         self.creator = None
+        self.key_object = None
 
     def login_user(self):
         '''
@@ -93,17 +93,12 @@ class ChatManager:
     def generate_pub_priv(self):
         try:
             # Try to open file containing my personal/private keys
-            pub_private = pickle.load(open("./res/%s_key_pair.p" % self.user_name, "rb"))
+            params = pickle.load(open("./res/%s_RSA_keys.p" % self.user_name, "rb"))
         except (OSError, IOError) as e:
             # If exception, generate these keys and write to pickle file
-            pub_private = {}
-            # NOTE possible to store entire object and avoid long calcs
-            params = ElGamal.generate(p_size, Random.new().read)
-            pub_private['public'] = params.y
-            pub_private['private'] = params.x
-            pub_private['p'] = params.p
-            pub_private['g'] = params.g
-            pickle.dump(pub_private, open("./res/%s_key_pair.p" % self.user_name, "wb"))
+            params = RSA.generate(p_size)
+            pickle.dump(params, open("./res/%s_RSA_keys.p" % self.user_name, "wb"))
+        self.key_object =  params
 
 
     def create_conversation(self):
