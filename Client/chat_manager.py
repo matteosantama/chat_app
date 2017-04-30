@@ -92,7 +92,7 @@ class ChatManager:
     def generate_pub_priv(self):
         try:
             # Try to open file containing my personal/private keys
-            pub_private = pickle.load(open("./res/%sKeys.p" % self.user_name, "rb"))
+            pub_private = pickle.load(open("./res/%s_key_pair.p" % self.user_name, "rb"))
         except (OSError, IOError) as e:
             # If exception, generate these keys and write to pickle file
             pub_private = {}
@@ -102,7 +102,7 @@ class ChatManager:
             pub_private['private'] = params.x
             pub_private['p'] = params.p
             pub_private['g'] = params.g
-            pickle.dump(pub_private, open("./res/%sKeys.p" % self.user_name, "wb"))
+            pickle.dump(pub_private, open("./res/%s_key_pair.p" % self.user_name, "wb"))
 
 
     def create_conversation(self):

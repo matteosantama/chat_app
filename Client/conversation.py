@@ -3,6 +3,9 @@ import base64
 from time import sleep
 from threading import Thread
 
+# PUB_KEY_REQUEST = '01'
+# PUB_KEY_RESPONSE = '02'
+
 class Conversation:
     '''
     Represents a conversation between participants
@@ -49,7 +52,7 @@ class Conversation:
 
     def exit(self):
         '''
-        Called when the application exists, breaks the infinite loop of message processing
+        Called when the application exits, breaks the infinite loop of message processing
 
         :return:
         '''
@@ -98,7 +101,15 @@ class Conversation:
         Prepares the conversation for usage
         :return:
         '''
-        get_all_pub_keys(self)
+
+        print "setting up..."
+        msg_raw = 'test'
+        self.process_outgoing_message(
+            msg_raw=msg_raw,
+            originates_from_console=True
+        )
+        print "done with test"
+        # get_all_pub_keys(self)
 
         # You can use this function to initiate your key exchange
         # Useful stuff that you may need:
@@ -111,33 +122,25 @@ class Conversation:
         # replace this with anything needed for your key exchange
         pass
 
-    def get_all_pub_keys(self):
-        pub_keys = {}
-        try:
-            missing = self.get_missing_pubs()
-            # for user in missing:
-            #     request_pub(user)
-            # GEt msising keys
-            # update file
-
-        except (OSError, IOError) as e:
-            # for user in self.manager.get_other_users():
-            #     request_pub(user)
-            # We have no keys
-            # get all keys s
-            # create file
-        pickle.dump(pub_keys, open("./res/%s_pub_keys.p" % self.user_name, "wb"))
-
-    def get_missing_pubs(self):
-        list_of_users = self.manager.get_other_users()
-        missing_users = []
-        pub_users = pickle.load(open("./res/%s_pub_keys.p" % self.user_name, "rb"))
-        for user in list_of_users:
-            if user.user_name not in pub_users:
-                missing_users.append(user.user_name)
-        return missing_users
-
-
+    # def get_all_pub_keys(self):
+    #     list_of_users = self.manager.get_other_users()
+    #
+    #     received_userkeys =
+    #
+    #     pickle.dump(pub_keys, open("./res/%s_pub_keys.p" % self.user_name, "wb"))
+    #
+    # def get_missing_pubs(self):
+    #     list_of_users = self.manager.get_other_users()
+    #     missing_users = []
+    #     pub_users = pickle.load(open("./res/%s_pub_keys.p" % self.user_name, "rb"))
+    #     for user in list_of_users:
+    #         if user.user_name not in pub_users:
+    #             missing_users.append(user.user_name)
+    #     return missing_users
+    #
+    #
+    # def request_pub(self, user_name):
+    #     self.manager.post_message_to_conversation()
 
 
     def process_incoming_message(self, msg_raw, msg_id, owner_str):
