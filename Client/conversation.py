@@ -3,8 +3,13 @@ import base64
 from time import sleep
 from threading import Thread
 
-# PUB_KEY_REQUEST = '01'
-# PUB_KEY_RESPONSE = '02'
+import pickle
+
+PUB_KEY_BROADCAST = '01'
+DH__INIT = '10'
+DH_RESPONSE = '11'
+DH_CONFIRM = '12'
+
 
 class Conversation:
     '''
@@ -30,6 +35,7 @@ class Conversation:
         ) # message processing loop
         self.msg_process_loop.start()
         self.msg_process_loop_started = True
+        self.collected_keys= {}
 
     def append_msg_to_process(self, msg_json):
         '''
@@ -102,14 +108,29 @@ class Conversation:
         :return:
         '''
 
-        print "setting up..."
-        msg_raw = 'test'
+        my_keys = pickle.load(open("./res/%s_key_pair.p" % self.manager.user_name, "rb"))
+        my_pub = PUB_KEY_BROADCAST + '|' + str(my_keys['public'])
+
+        print 'sending pub key'
         self.process_outgoing_message(
-            msg_raw=msg_raw,
+            msg_raw=my_pub,
             originates_from_console=True
         )
-        print "done with test"
-        # get_all_pub_keys(self)
+        print "sent"
+        print 'creating thread'
+
+        thread = Thread(target = self.collect_keys)
+        thread.start()
+
+        'Waiting for users to join chatroom'
+        while thread.isAlive():
+            print 'Waiting for users to join chatroom'
+            sleep(1.0)
+
+        print 'we made it!'
+        print self.collected_keys,'all keys'
+
+        # Diffie Hellman
 
         # You can use this function to initiate your key exchange
         # Useful stuff that you may need:
@@ -122,25 +143,24 @@ class Conversation:
         # replace this with anything needed for your key exchange
         pass
 
-    # def get_all_pub_keys(self):
-    #     list_of_users = self.manager.get_other_users()
-    #
-    #     received_userkeys =
-    #
-    #     pickle.dump(pub_keys, open("./res/%s_pub_keys.p" % self.user_name, "wb"))
-    #
-    # def get_missing_pubs(self):
-    #     list_of_users = self.manager.get_other_users()
-    #     missing_users = []
-    #     pub_users = pickle.load(open("./res/%s_pub_keys.p" % self.user_name, "rb"))
-    #     for user in list_of_users:
-    #         if user.user_name not in pub_users:
-    #             missing_users.append(user.user_name)
-    #     return missing_users
-    #
-    #
-    # def request_pub(self, user_name):
-    #     self.manager.post_message_to_conversation()
+    def collect_keys(self):
+        chat_participants = self.manager.get_other_users()
+
+        while len(chat_participants)+1 != len(self.collected_keys):
+            # loop through messages from indices last_seen_id trhough last_processed_msg_id
+            for i in range(len(self.all_messages)):
+                msg = self.all_messages[i]
+                # print msg,"printing message"
+                # print msg['content'], 'message content'
+                raw = base64.decodestring(base64.decodestring(msg['content'])).split('|')
+                # print raw
+                if raw[0] == PUB_KEY_BROADCAST:
+                    self.collected_keys[msg["owner"]] = raw[1]
+            # print self.collected_keys,'collected keys'
+            sleep(1.0)
+        # print self.collected_keys, 'all keys'
+        print 'thread stopped'
+
 
 
     def process_incoming_message(self, msg_raw, msg_id, owner_str):

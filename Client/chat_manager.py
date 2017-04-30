@@ -358,7 +358,8 @@ class ChatManager:
                             print "Entered conversation ID is not a number"
                             continue
                         self.current_conversation = Conversation(c_id, self)
-                        self.current_conversation.setup_conversation()
+                        # NOTE moved below about 15 lines down
+                        # self.current_conversation.setup_conversation()
                     except urllib2.HTTPError as e:
                         print "Unable to determine validity of conversation ID, server returned HTTP", e.code, e.msg
                         continue
@@ -372,6 +373,8 @@ class ChatManager:
                         continue
                     # Enter the conversation (message retrieval thread becomes active)
                     state = IN_CONVERSATION
+                    # NOTE see note above
+                    self.current_conversation.setup_conversation()
                     # Read messages from the console
                     self.read_user_input()
                 elif state == STOP:
@@ -426,7 +429,7 @@ class ChatManager:
             # Read the menu item selection ID entered by the user
             selected_option = raw_input()
         except RuntimeError:
-            # raw_input() will raise RuntimeError of interrupted by OS signal
+            # raw_input() will raise RuntimeError f interrupted by OS signal
             print "Error detected while waiting for user input, multiple attempts to enter menu?"
             return
         except KeyboardInterrupt:
