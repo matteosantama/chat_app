@@ -10,6 +10,7 @@ from Crypto.PublicKey import ElGamal, RSA
 from Crypto.Signature import PKCS1_PSS
 from Crypto.Util import number
 from Crypto.Hash import SHA
+from Crypto.Util.number import GCD
 
 MESSAGE_CODE = '00'
 PUB_KEY_BROADCAST = '01'
@@ -162,9 +163,20 @@ class Conversation:
                 print 'sleeping'
                 sleep(0.01)
             # received parameters from A
-            y_a, g_a, p_a = self.DH_sender_params
+            y_a, g, p = map(int,self.DH_sender_params)
+            # generate private DH parameter x of BCD
+            while True:
+                x_b = random.StrongRandom().randint(1, p-1)
+                if GCD(x_b, p-1) == 1: break
+            # create ElGamal key from the parameters of A
+            constructed_DH_object = ElGamal.construct((p, g, y_a))
+            # calculate shared key and BCD private key
+            c = constructed_DH_object.encrypt(1, x_bob)
+            y_b = c[0]
+            shared = c[1]
+            # TODO
             # create response with B's parameters
-            DH_msg2 = DH_RESPONSE + '|' + str(DH_params.y) + '|' + str(DH_params.g) + '|' + str(DH_params.p)
+            DH_msg2 = DH_RESPONSE + '|' + str(y_b) + '|' + str(constructed_DH_object.g) + '|' + str(constructed_DH_object.p)
             # sign A's parameters
             signature = self.sign(str(y_a) + '|' + str(g_a) + '|' + str(p_a))
             # append signature
