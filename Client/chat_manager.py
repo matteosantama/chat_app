@@ -93,11 +93,13 @@ class ChatManager:
     def generate_pub_priv(self):
         try:
             # Try to open file containing my personal/private keys
-            params = pickle.load(open("./res/%s_RSA_keys.p" % self.user_name, "rb"))
+            with open("./res/%s_RSA_keys.p" % self.user_name, "rb") as keyfile:
+                params = pickle.load(keyfile)
         except (OSError, IOError) as e:
             # If exception, generate these keys and write to pickle file
             params = RSA.generate(p_size)
-            pickle.dump(params, open("./res/%s_RSA_keys.p" % self.user_name, "wb"))
+            with open("./res/%s_RSA_keys.p" % self.user_name, "wb") as keyfile:
+                pickle.dumps(params,keyfile)
         self.key_object =  params
 
 
@@ -379,8 +381,8 @@ class ChatManager:
                         except ValueError as e:
                             print "Entered conversation ID is not a number"
                             continue
-                        self.current_conversation = Conversation(c_id, self)
                         # NOTE moved below about 15 lines down
+                        # self.current_conversation = Conversation(c_id, self)
                         # self.current_conversation.setup_conversation()
                     except urllib2.HTTPError as e:
                         print "Unable to determine validity of conversation ID, server returned HTTP", e.code, e.msg
@@ -394,6 +396,7 @@ class ChatManager:
                     except KeyboardInterrupt:
                         continue
                     # Enter the conversation (message retrieval thread becomes active)
+                    self.current_conversation = Conversation(c_id, self)
                     state = IN_CONVERSATION
                     # NOTE see note above
                     self.current_conversation.setup_conversation()
