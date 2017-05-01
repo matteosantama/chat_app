@@ -12,6 +12,7 @@ from Crypto.Util import number
 from Crypto.Hash import SHA
 from Crypto.Util.number import GCD
 from Crypto.Cipher import AES
+from AESCipher import AESCipher
 
 MESSAGE_CODE = '00'
 PUB_KEY_BROADCAST = '01'
@@ -262,7 +263,12 @@ class Conversation:
         decoded_msg = base64.decodestring(msg_raw)
 
         message_parts = decoded_msg.split('|')
-        if message_parts[0] == MESSAGE_CODE:
+        if message_parts[0] == MESSAGE_CODE and self.manager.user_name != owner_str:
+            code, ciphertext, signature = message_parts
+            str_to_verify = code + '|' + ciphertext
+            assert self.verify(self.collected_keys[owner_str],signature,str_to_verify)
+            cipher = AESCipher(self.symm_key)
+            decoded_msg = cipher.decrypt(ciphertext)
             # print message and add it to the list of printed messages
             self.print_message(
                 msg_raw=decoded_msg,
@@ -325,11 +331,11 @@ class Conversation:
                 sender_pub = self.collected_keys[self.creator]
                 # print 'verifying signature'
                 assert self.verify(sender_pub, sig_sender, str_to_verify)
-                self.save_symm_key()
                 # decrypt encoded symm key
-                symm_key = self.ECB_decrypt(enc_symm_key, self.chop(self.shared_K))
+                self.symm_key = self.ECB_decrypt(enc_symm_key, self.chop(self.shared_K))
+                self.save_symm_key()
                 # write symm key to disk. chat_id mapped to symm_key
-                print 'Symmetric Key: ', symm_key
+                print 'Symmetric Key: ', self.symm_key
 
 
     def process_outgoing_message(self, msg_raw, originates_from_console=False):
@@ -340,10 +346,15 @@ class Conversation:
         :return: message to be sent to the server
         '''
 
+
         # if the message has been typed into the console, record it, so it is never printed again during chatting
         if originates_from_console == True:
             # message is already seen on the console
-            msg_raw = MESSAGE_CODE + '|' + msg_raw
+            cipher = AESCipher(self.symm_key)
+            encrypted_msg = cipher.encrypt(msg_raw)
+            str_to_sign = MESSAGE_CODE + '|' + encrypted_msg
+            sig = self.sign(str_to_sign)
+            msg_raw = MESSAGE_CODE + '|' + encrypted_msg + '|'+ sig
             m = Message(
                 owner_name=self.manager.user_name,
                 content=msg_raw
