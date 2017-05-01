@@ -11,6 +11,7 @@ from Crypto.Signature import PKCS1_PSS
 from Crypto.Util import number
 from Crypto.Hash import SHA
 from Crypto.Util.number import GCD
+from Crypto.Cipher import AES
 
 MESSAGE_CODE = '00'
 PUB_KEY_BROADCAST = '01'
@@ -47,6 +48,10 @@ class Conversation:
         self.msg_process_loop_started = True
         self.collected_keys= {}
         self.DH_sender_params = None
+        self.DH_receiver_params = None
+        self.DH_confirm_params = None
+        # TODO make creator a field of conversation
+        # self.creator = self.manager.get_conversation_creator()
 
     def append_msg_to_process(self, msg_json):
         '''
@@ -147,20 +152,40 @@ class Conversation:
         if self.manager.user_name == creator:
             print 'in if statement'
             # send first DH parameter to all users
-            DH_msg1 = DH_INIT + '|' + str(DH_params.y) + '|' + str(DH_params.g) + '|' + str(DH_params.p)
+            params_string = str(DH_params.y) + '|' + str(DH_params.g) + '|' + str(DH_params.p)
+            DH_msg1 = DH_INIT + '|' + params_string
             print DH_msg1
             self.process_outgoing_message(
                 msg_raw=DH_msg1,
                 originates_from_console=False
             )
             # Wait for BCDs responses
-            # while self.DH_receiver_params is None:
-            #     sleep(0.1)
+            while self.DH_receiver_params is None:
+                sleep(0.1)
+            print self.DH_receiver_params
+            owner, y_b, g, p, sig = self.DH_receiver_params
+            verified = self.verify(self.collected_keys[owner], sig, params_string)
+            assert verified
+            # create ElGamal key from the parameters of Bob
+            constr_key_obj_B = ElGamal.construct((int(p), int(g), int(y_b)))
+            c = constr_key_obj_B.encrypt(1, DH_params.x)
+            shared_K = c[1]
+            # sign and send A and B's public parameters and the symmetric key
+            sig = self.sign(str(DH_params.y) + '|' + str(y_b))
+            # symmetric key is encrypted with the shared secret in AES, ECB mode
+            symm_key = number.long_to_bytes(random.StrongRandom().getrandbits(128))
+            print 'symmetric key', symm_key
+            encoded_symm_key = self.ECB_encrypt(symm_key, self.chop(shared_K))
+            DH_msg3 = DH_CONFIRM + '|' + sig + '|' + encoded_symm_key
+            self.process_outgoing_message(
+                msg_raw=DH_msg3,
+                originates_from_console=False
+            )
         else:
             print 'in else'
             # Wait for all the recivers to get firts DH message
             while self.DH_sender_params is None:
-                print 'sleeping'
+                # print 'sleeping'
                 sleep(0.01)
             # received parameters from A
             y_a, g, p = map(int,self.DH_sender_params)
@@ -169,22 +194,33 @@ class Conversation:
                 x_b = random.StrongRandom().randint(1, p-1)
                 if GCD(x_b, p-1) == 1: break
             # create ElGamal key from the parameters of A
-            constructed_DH_object = ElGamal.construct((p, g, y_a))
+            constr_key_obj_A = ElGamal.construct((p, g, y_a))
             # calculate shared key and BCD private key
-            c = constructed_DH_object.encrypt(1, x_bob)
+            c = constr_key_obj_A.encrypt(1, x_b)
             y_b = c[0]
-            shared = c[1]
-            # TODO
+            shared_K = c[1]
             # create response with B's parameters
-            DH_msg2 = DH_RESPONSE + '|' + str(y_b) + '|' + str(constructed_DH_object.g) + '|' + str(constructed_DH_object.p)
+            DH_msg2 = DH_RESPONSE + '|' + str(y_b) + '|' + str(constr_key_obj_A.g) + '|' + str(constr_key_obj_A.p)
             # sign A's parameters
-            signature = self.sign(str(y_a) + '|' + str(g_a) + '|' + str(p_a))
+            my_signature = self.sign(str(y_a) + '|' + str(g) + '|' + str(p))
             # append signature
-            DH_msg2 += '|' + signature
+            DH_msg2 += '|' + my_signature
             # send response
             self.process_outgoing_message(msg_raw=DH_msg2,originates_from_console=False)
-            print 'Receiver: ' + str(y_a) + '|' + str(g_a) + '|' + str(p_a)
-
+            while self.DH_confirm_params is None:
+                sleep(0.01)
+            # verify final DH msg
+            print 'DH_confirm_params loaded... verifying'
+            # if verified, decode symmetric k with shared_K
+            sig_sender, enc_symm_key = self.DH_confirm_params
+            str_to_verify = str(y_a) + '|' + str(y_b)
+            sender_pub = self.collected_keys[creator]
+            assert self.verify(sender_pub, sig_sender, str_to_verify)
+            print 'verified'
+            # decrypt encoded symm key
+            symm_key = self.ECB_decrypt(enc_symm_key, self.chop(shared_K))
+            # write symm key to disk. chat_id mapped to symm_key
+            print 'symm key', symm_key
 
         # You can use this function to initiate your key exchange
         # Useful stuff that you may need:
@@ -219,8 +255,30 @@ class Conversation:
         keystr = self.manager.key_object.exportKey('PEM')
         # signer object constructed with RSA object chat manager
         signer = PKCS1_PSS.new(RSA.importKey(keystr))
-        return signer.sign(h)
+        return base64.encodestring(signer.sign(h))
 
+    def verify(self, pub_key_obj, sig, msg):
+        h = SHA.new()
+        h.update(msg)
+        keystr = pub_key_obj.exportKey('PEM')
+        verifier = PKCS1_PSS.new(RSA.importKey(keystr))
+        return verifier.verify(h, base64.decodestring(sig))
+
+    def ECB_encrypt(self,plaintext,key):
+        cipher = AES.new(str(key), AES.MODE_ECB)
+        ciphertext = cipher.encrypt(plaintext)
+        return base64.encodestring(ciphertext)
+
+    def ECB_decrypt(self,ciphertext,key):
+        ciphertext = base64.decodestring(ciphertext)
+        cipher = AES.new(str(key), AES.MODE_ECB)
+        plaintext = cipher.decrypt(ciphertext)
+        return plaintext
+
+    def chop(self,long_key):
+        bytes = number.long_to_bytes(long_key)
+        n = len(bytes)
+        return bytes[:n/2]
 
     def process_incoming_message(self, msg_raw, msg_id, owner_str):
         '''
@@ -246,8 +304,14 @@ class Conversation:
                 owner_str=owner_str
             )
         elif message_parts[0] == DH_INIT:
-            print "INIT", message_parts
+            print 'received DH_INIT'
             self.DH_sender_params = message_parts[1::]
+        elif message_parts[0] == DH_RESPONSE:
+            print 'received DH_RESPONSE'
+            self.DH_receiver_params = [owner_str]+ message_parts[1::]
+        elif message_parts[0] == DH_CONFIRM:
+            print 'received DH_CONFIRM'
+            self.DH_confirm_params = message_parts[1::]
 
     def process_outgoing_message(self, msg_raw, originates_from_console=False):
         '''
