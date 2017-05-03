@@ -21,6 +21,8 @@ DH_RESPONSE = '11'
 DH_CONFIRM = '12'
 SYM_KEY = '13'
 
+WINDOW = 5
+
 p_size = 256
 
 class Conversation:
@@ -57,6 +59,9 @@ class Conversation:
         self.shared_K = None
         self.creator = None
         self.symm_key = None
+        self.send_counter = None
+        self.counter_table = None
+
 
     def append_msg_to_process(self, msg_json):
         '''
@@ -145,6 +150,7 @@ class Conversation:
             sleep(2.0)
 
         self.creator = self.manager.get_conversation_creator()
+        self.init_msg_counters()
 
         try:
             # Try to open file containing symmetric keys
@@ -162,6 +168,8 @@ class Conversation:
             if self.manager.user_name == self.creator:
                 self.initiate_DH()
 
+        print 'Conversation set up. Begin chatting \n\n'
+
         # You can use this function to initiate your key exchange
         # Useful stuff that you may need:
         # - name of the current user: self.manager.user_name
@@ -172,6 +180,29 @@ class Conversation:
         # Since there is no crypto in the current version, no preparation is needed, so do nothing
         # replace this with anything needed for your key exchange
         pass
+
+    #initializes the counters
+    def init_msg_counters(self):
+        try:
+            with open("./res/%s_counter_table.p" % self.manager.user_name, "rb") as counterfile:
+                table = pickle.load(counterfile)
+                if self.id in table:
+                    self.send_counter, self.counter_table = table[self.id]
+                else:
+                    self.counter_table = {}
+                    for user in self.get_other_users:
+                        self.counter_table[user] = 0
+                    self.send_counter = 0
+                    table[self.id] = (self.send_counter, self.counter_table)
+        except (OSError, IOError) as e:
+            with open("./res/%s_counter_table.p" % self.manager.user_name, "wb") as counterfile:
+                self.counter_table = {}
+                for user in self.manager.get_other_users():
+                    self.counter_table[user] = 0
+                self.send_counter = 0
+                table = {}
+                table[self.id] = (self.send_counter, self.counter_table)
+                pickle.dump(table, counterfile)
 
 
     def initiate_DH(self):
@@ -263,10 +294,14 @@ class Conversation:
         decoded_msg = base64.decodestring(msg_raw)
 
         message_parts = decoded_msg.split('|')
+
         if message_parts[0] == MESSAGE_CODE and self.manager.user_name != owner_str:
-            code, ciphertext, signature = message_parts
-            str_to_verify = code + '|' + ciphertext
+            code, ciphertext, recv_counter, signature = message_parts
+            str_to_verify = code + '|' + ciphertext + '|' + recv_counter
+            # check signature of message code, ciphertext, and counter before proceeding
             assert self.verify(self.collected_keys[owner_str],signature,str_to_verify)
+            # check that counter is within window for that user and update counter
+            self.update_recv_ctr(recv_counter,owner_str)
             cipher = AESCipher(self.symm_key)
             decoded_msg = cipher.decrypt(ciphertext)
             # print message and add it to the list of printed messages
@@ -276,7 +311,7 @@ class Conversation:
             )
         # STAGE 1: Executed by receivers. creator has initiated DH protocol, and parties BCD send responses
         elif message_parts[0] == DH_INIT and self.manager.user_name != owner_str:
-            print 'received DH_INIT'
+            # print 'received DH_INIT'
             # compute private and public keys
             # received parameters from A
             y_a, g, p = map(int,message_parts[1::])
@@ -301,7 +336,7 @@ class Conversation:
             self.process_outgoing_message(msg_raw=DH_msg2, originates_from_console=False)
         # STAGE 2: A receives and processes each response, and sends confirmation message with symm key
         elif message_parts[0] == DH_RESPONSE and self.manager.user_name != owner_str and self.manager.user_name == self.creator:
-            print 'received DH_RESPONSE'
+            # print 'received DH_RESPONSE'
             # verify signature
             params_string = str(self.DH_params.y) + '|' + str(self.DH_params.g) + '|' + str(self.DH_params.p)
             y_b, g, p, sig = message_parts[1::]
@@ -313,7 +348,7 @@ class Conversation:
             # sign and send A and B's public parameters and the symmetric key
             sig = self.sign(str(self.DH_params.y) + '|' + str(y_b))
             # symmetric key is encrypted with the shared secret in AES, ECB mode
-            print 'Symmetric key: ', self.symm_key
+            # print 'Symmetric key: ', self.symm_key
             encoded_symm_key = self.ECB_encrypt(self.symm_key, self.chop(shared_K))
             DH_msg3 = DH_CONFIRM + '|' + sig + '|' + encoded_symm_key + '|' + owner_str
             self.process_outgoing_message(
@@ -335,7 +370,7 @@ class Conversation:
                 self.symm_key = self.ECB_decrypt(enc_symm_key, self.chop(self.shared_K))
                 self.save_symm_key()
                 # write symm key to disk. chat_id mapped to symm_key
-                print 'Symmetric Key: ', self.symm_key
+                # print 'Symmetric Key: ', self.symm_key
 
 
     def process_outgoing_message(self, msg_raw, originates_from_console=False):
@@ -349,12 +384,14 @@ class Conversation:
 
         # if the message has been typed into the console, record it, so it is never printed again during chatting
         if originates_from_console == True:
+            self.update_send_ctr()
             # message is already seen on the console
             cipher = AESCipher(self.symm_key)
-            encrypted_msg = cipher.encrypt(msg_raw)
-            str_to_sign = MESSAGE_CODE + '|' + encrypted_msg
+            encrypted_msg =  cipher.encrypt(msg_raw)
+
+            str_to_sign = MESSAGE_CODE + '|' + encrypted_msg + '|' + str(self.send_counter)
             sig = self.sign(str_to_sign)
-            msg_raw = MESSAGE_CODE + '|' + encrypted_msg + '|'+ sig
+            msg_raw = str_to_sign +'|'+ sig
             m = Message(
                 owner_name=self.manager.user_name,
                 content=msg_raw
@@ -367,6 +404,37 @@ class Conversation:
 
         # post the message to the conversation
         self.manager.post_message_to_conversation(encoded_msg)
+
+    def update_send_ctr(self):
+        self.send_counter += 1
+        table = {}
+        with open('./res/%s_counter_table.p' % self.manager.user_name, 'rb') as counterfile:
+            table = pickle.load(counterfile)
+        table[self.id] = (self.send_counter, table[self.id][1])
+        with open('./res/%s_counter_table.p' % self.manager.user_name, 'wb') as counterfile:
+            pickle.dump(table,counterfile)
+        pass
+
+    def update_recv_ctr(self, new_ctr, user):
+        new_ctr = int(new_ctr)
+        receiver_counter = self.counter_table[user]
+        if (receiver_counter - WINDOW < new_ctr < receiver_counter + WINDOW):
+            #accept
+            return
+        elif new_ctr > receiver_counter + WINDOW:
+            #accept and extend counter
+            self.counter_table[user] = new_ctr
+        else:
+            raise IOError # Invalid packet recieved
+
+        table = {}
+        with open('./res/%s_counter_table.p', 'rb') as counterfile:
+            table = pickle.load(counterfile)
+        table[self.id] = (table[self.id][0], self.counter_table)
+        with open('./res/%s_counter_table.p', 'wb') as counterfile:
+            pickle.dump(table,counterfile)
+        pass
+
 
     def print_message(self, msg_raw, owner_str):
         '''
